@@ -566,16 +566,13 @@ def main(args):
     
     tokenizer = Tokenizer(file_name)
     tokens = tokenizer.tokenize_data()
-    print('TOKENS OF THE PROGRAM: ', list(map(lambda token: token.token_type, tokens)))
 
     parser = Parser(tokens)
-
     parsing_result = parser.parse_program()
     turtle.done()
 
-    print(parser.scopes)
-    print(parsing_result.type)
-
+    if parsing_result.type == ParsingResultType.SUCCESS:
+        print('PROGAMA EJECUTADO CORRECTAMENTE')
 
 if __name__ == '__main__':
     main(sys.argv)
