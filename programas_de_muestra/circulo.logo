@@ -1,0 +1,15 @@
+/* Este programa dibuja un circulo color azul en el lienzo 
+*/ 
+
+let svueltas : number = 0 ;
+
+rept svueltas  { }
+
+/*
+rept svueltas {
+    rept 360 {
+        dela 2 ;
+        izqd 1 ;
+    }
+}
+*/

@@ -3,22 +3,10 @@ main module to interpret a language
 
 this language will be an interpreted language
 
-features that the language will support:
-- custom error messages
-- bindings (we will have to implement a bindings dicctionary)
-- typed bindings
-- functions
-- for loops
-- multi-line commands
-
-NOTE: log custom error with most recursion profundity since it is the one
-      to most likely help the user
-
 TODO: custom error messages, find a way to deal with exceptions
-
 """
 
-from typing import List, Dict, Optional, Union, Callable
+from typing import List, Dict, Optional, Union
 import turtle
 import sys
 from pathlib import Path
@@ -56,7 +44,7 @@ class TokenType(Enum):
     
     # first to be returned before a binding name
     COLOUR_LITERAL = 'black|red|yellow|green|orange|blue'
-    NUMBER_LITERAL = '([1-9][0-9]*| 0)(.)?([0-9])*'
+    NUMBER_LITERAL = '([1-9]([0-9])*|0)(.)?([0-9])*'
     
     BINDING_NAME = '[A-Za-z]([A-Za-z0-9_])*'
     
@@ -343,6 +331,7 @@ class Parser:
             binding_name = self.tokens[index].value
             loop_times = self.fetch_variable(binding_name)
         
+
         # check type of loop times
         if type(loop_times) == str:
             raise SemanticError.invalid_arg_type(expected_type='integer number', found_type='colour')
@@ -351,7 +340,8 @@ class Parser:
         
         loop_times = int(loop_times)
         index += 1
-        end_index = 0
+
+        end_index = index
         
         for _ in range(loop_times):
             scoped_statements_parsing_result = self.parse_scoped_statements(index)
@@ -392,7 +382,7 @@ class Parser:
             binding_name = self.tokens[index].value
             value = self.fetch_variable(binding_name)
             if type(value) != arg_type:
-                raise BaseException('semantic error binding type does not match needed arg type')
+                raise SemanticError.invalid_arg_type(expected_type=arg_type, found_type=type(value))
         elif self.tokens[index].token_type == arg_token:
             value = self.tokens[index].value
         else:
@@ -568,13 +558,11 @@ def main(args):
     
     tokenizer = Tokenizer(file_name)
     tokens = tokenizer.tokenize_data()
-    print('TOKENS OF THE PROGRAM: ', list(map(lambda token: token.value, tokens)))
+    print('TOKENS OF THE PROGRAM: ', list(map(lambda token: token.token_type, tokens)))
 
     parser = Parser(tokens)
 
-    turtle.begin_fill()
     parsing_result = parser.parse_program()
-    turtle.end_fill()
     turtle.done()
 
     print(parser.scopes)
