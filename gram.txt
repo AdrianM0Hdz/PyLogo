@@ -1,0 +1,11 @@
+right_turn ::= 'dere' ('number literal' | 'binding_name') ';'
+pen_up ::= 'lplum' ';'
+pen_down ::= 'bplum' ';'
+change_colour ::= 'colp' ('colour literal' | 'binding name') ';'
+center ::= 'centr';
+clear ::= 'limp';
+colour_declaration ::= 'let' 'binding_name':  'colour datatype' '=' 'colour literal'; 
+number_declaration ::= 'let' 'binding_name' : 'number datatype' '= 'number literal';
+
+
+| backward_statement | left_turn | right_turn | change_colour | pen_up | pen_down | center | clear | colour_declaration | number_declaration

@@ -81,6 +81,34 @@ class Token:
         
         self.value = value
 
+# errors 
+
+class LexicError(BaseException):
+    
+    @classmethod
+    def invalid_lexeme(cls, lexeme: str):
+        return cls(f'[INVALID LEXEME: {lexeme}]')
+
+class SyntacticError(BaseException):
+
+    @classmethod
+    def invalid_syntax(cls, expected_lexeme: str, found_lexeme: str):
+        return cls(f'[EXPECTED LEXEME: {expected_lexeme} GOT LEXEME: {found_lexeme}]')    
+
+class SemanticError(BaseException):
+    
+    @classmethod
+    def conflicting_variable_declaration(cls, binding_name: str):
+        return cls(f'[BINDING NAME: {binding_name} IS ALEADY TAKEN IN THIS SCOPE]')
+    
+    @classmethod
+    def non_existent_variable(cls, binding_name: str):
+        return cls(f'[BINDING WITH NAME: {binding_name}] DOES NOT EXIST]')
+
+    @classmethod
+    def invalid_arg_type(cls, expected_type:Union[type, str], found_type:Union[type, str]):
+        return cls(f'[INVALID ARG TYPE FOR STATEMENT EXPECTED: {expected_type} GOT: {found_type}]')
+
 # lexer for lexic analysis
 # ignore a 
 # white spaces tabs and new lines will be delimitators
@@ -107,12 +135,8 @@ class Tokenizer:
         self.cur_index = 0
 
     def lexeme_matches_token(self, lexeme: str, token_type: TokenType) -> bool:
-        match = re.match(token_type.value, lexeme)
-        
+        match = re.fullmatch(token_type.value, lexeme)        
         if match == None:
-            return False
-        begin, end = match.span()
-        if begin != 0 or end != len(lexeme):
             return False
         return True
 
@@ -121,7 +145,7 @@ class Tokenizer:
         """
         for token_type in TokenType: 
             # special tokens not meant to be matched
-            if token_type == TokenType.EOF:
+            if token_type == TokenType.EOF or token_type == TokenType.UNKNOWN:
                 continue
             if self.lexeme_matches_token(lexeme, token_type):
                 return Token(token_type, lexeme)
@@ -160,12 +184,20 @@ class Tokenizer:
             if token.token_type == TokenType.CLOSE_COMMENT and inside_comment == True:
                 inside_comment = False 
             elif token.token_type == TokenType.CLOSE_COMMENT and inside_comment == False:
-                print("[TOKENIZATION EXCEPTION comment closing withouht opening in]")
+                raise SyntaxError("[TOKENIZATION EXCEPTION comment closing withouht opening in]")
         
         if inside_comment == True:
-            print("TOKENIZATION EXCEPTION COMMENT opening withouth closing")
+            raise SyntaxError("[TOKENIZATION EXCEPTION COMMENT opening withouth closing]")
 
         return final_tokens
+
+    def check_for_unknown_tokens(self, tokens: List[Token]):
+        """ Called once comments were removed and raises error message if it detects an unknown token
+        """
+        for token in tokens:
+            if token.token_type == TokenType.UNKNOWN:
+                raise LexicError.invalid_lexeme(str(token.value))
+
 
     def tokenize_data(self) -> List[Token]:
         """ Returns array of tokens with comments trimmed off 
@@ -175,9 +207,7 @@ class Tokenizer:
                 
         while cur_lexeme != None:
             token = self.get_token(cur_lexeme)
-            
             tokens.append(token)
-            
             cur_lexeme = self.get_next_lexeme()
 
         eof_token = Token(TokenType.EOF, TokenType.EOF.value)
@@ -185,6 +215,8 @@ class Tokenizer:
         
         tokens = self.trim_off_comments(tokens)
         
+        self.check_for_unknown_tokens(tokens)
+
         return tokens
 
 #       - backtrack when found a parsing error
@@ -235,6 +267,8 @@ class Parser:
         turtle.pendown()
 
     def save_variable(self, binding_name: str, value: Union[float, str]):
+        if self.scopes[len(self.scopes)-1].get(binding_name) is not None: 
+            raise SemanticError.conflicting_variable_declaration(binding_name)
         self.scopes[len(self.scopes)-1][binding_name] = value    
     
     # parser statements
@@ -251,25 +285,31 @@ class Parser:
                 return var 
             cur_scope -= 1
         
-        raise BaseException(f'Semantic error, variable with name {binding_name} does not exist')
+        raise SemanticError.non_existent_variable(binding_name)
         
     def parse_instruction_batch(self, index) -> ParsingResult:
+        """ Recursively processes a batch of instructions until the scope is 
+        closed
+        """
         if self.tokens[index].token_type == TokenType.CLOSE_SCOPE:
             return ParsingResult.success(index+1)
         
         line_statement_parsing_result = self.parse_line_statement(index)
         if line_statement_parsing_result.type == ParsingResultType.SUCCESS:
             index = line_statement_parsing_result.end_index
-            self.parse_instruction_batch(index)
+            batch_parsing_result = self.parse_instruction_batch(index)
+            if batch_parsing_result.type == ParsingResultType.SUCCESS:
+                return batch_parsing_result
 
-        scoped_instuctions_parsing_result = self.parse_scoped_statements(index)
-        if scoped_instuctions_parsing_result.type == ParsingResultType.SUCCESS:
-            index = scoped_instuctions_parsing_result.end_index
-            self.parse_instruction_batch(index)
-
+        scope_statement_parsing_result = self.parse_scope_statement(index)
+        if scope_statement_parsing_result.type == ParsingResultType.SUCCESS:
+            index = scope_statement_parsing_result.end_index 
+            batch_parsing_result = self.parse_instruction_batch(index)
+            if batch_parsing_result.type == ParsingResultType.SUCCESS:
+                return batch_parsing_result
+        
         return ParsingResult.error()
-    
-    
+        
     def parse_scoped_statements(self, index=0) -> ParsingResult:
         if self.tokens[index].token_type != TokenType.OPEN_SCOPE:
             return ParsingResult.error()
@@ -285,13 +325,54 @@ class Parser:
             self.scopes.pop()
             return batch_parsing_result
 
-
         return ParsingResult(ParsingResultType.ERROR, 'error', 0)
     
-    
-    def parse_loop(self, index) -> ParsingResult:
-        return ParsingResult.error()
+    def parse_loop_statement(self, index) -> ParsingResult:
+        """ parses a loop and verifies that the argument given to the loop statement is 
+        of correct type
+        """
+        if self.tokens[index].token_type != TokenType.FOR_LOOP:
+            return ParsingResult.error()
+        index += 1
+
+        loop_times = None
         
+        if self.tokens[index].token_type == TokenType.NUMBER_LITERAL:
+            loop_times = self.tokens[index].value
+        elif self.tokens[index].token_type == TokenType.BINDING_NAME:
+            binding_name = self.tokens[index].value
+            loop_times = self.fetch_variable(binding_name)
+        
+        # check type of loop times
+        if type(loop_times) == str:
+            raise SemanticError.invalid_arg_type(expected_type='integer number', found_type='colour')
+        elif loop_times % 1 != 0:
+            raise SemanticError.invalid_arg_type(expected_type='integer number', found_type='float number')
+        
+        loop_times = int(loop_times)
+        index += 1
+        end_index = 0
+        
+        for _ in range(loop_times):
+            scoped_statements_parsing_result = self.parse_scoped_statements(index)
+            if scoped_statements_parsing_result.type == ParsingResultType.ERROR:
+                return scoped_statements_parsing_result
+            end_index = scoped_statements_parsing_result.end_index
+
+        return ParsingResult.success(end_index)
+        
+    def parse_scope_statement(self, index) -> ParsingResult:
+        """ Tries to parse scope statement """
+        
+        scoped_statements_parse_result = self.parse_scoped_statements(index)
+        if scoped_statements_parse_result.type == ParsingResultType.SUCCESS:
+            return scoped_statements_parse_result
+        
+        loop_statement_parse_result = self.parse_loop_statement(index)
+        if loop_statement_parse_result.type == ParsingResultType.SUCCESS:
+            return loop_statement_parse_result
+        
+        return ParsingResult.error()
 
     def parse_arg_line_statement(self, index: int, statement_token: TokenType, 
                                  arg_token: TokenType, arg_type: type, 
@@ -348,7 +429,6 @@ class Parser:
         ) -> ParsingResult:
         """ Parses a binding definition of type binding_type and with value value
         """
-
         if self.tokens[index].token_type != TokenType.LET_KEYWORD:
             return ParsingResult.error()
         index += 1
@@ -374,6 +454,10 @@ class Parser:
         if self.tokens[index].token_type != binding_literal_token:
             return ParsingResult.error()
         value = self.tokens[index].value
+        index += 1
+
+        if self.tokens[index].token_type != TokenType.DELIMITATOR:
+            return ParsingResult.error()
         index += 1
 
         # save binding 
@@ -454,15 +538,10 @@ class Parser:
         if line_statement_parsing_result.type == ParsingResultType.SUCCESS:
             return line_statement_parsing_result
         
-        scoped_statements_parsing_result = self.parse_scoped_statements(index)
-        if scoped_statements_parsing_result.type == ParsingResultType.SUCCESS:
-            return scoped_statements_parsing_result
-        
-
-        loop_parsing_result = self.parse_loop(index)
-        if loop_parsing_result.type == ParsingResultType.SUCCESS:
-            return loop_parsing_result
-        
+        scope_statement_parsing_result = self.parse_scope_statement(index)
+        if scope_statement_parsing_result.type == ParsingResultType.SUCCESS:
+            return scope_statement_parsing_result
+                
         return ParsingResult(ParsingResultType.ERROR, 'ERROR', 0)
 
 

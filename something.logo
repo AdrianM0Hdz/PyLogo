@@ -1,3 +1,11 @@
-{
-    let a : number = 12 ;
+/* this program intends to draw something cool 
+** Copyright (c) 2023
+**
+**
+*/
+
+
+rept 360 {
+    dela 4 ;
+    izqd 1 ;
 }
