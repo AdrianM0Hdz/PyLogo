@@ -3,7 +3,6 @@ main module to interpret a language
 
 this language will be an interpreted language
 
-TODO: custom error messages, find a way to deal with exceptions
 """
 
 from typing import List, Dict, Optional, Union
@@ -52,13 +51,6 @@ class TokenType(Enum):
     # not matched any of the above
     UNKNOWN = 'unknown'
     EOF = '@@EOF@@' # special token to indicate end of file
-
-value_associated_tokens = [
-    TokenType.UNKNOWN, 
-    TokenType.BINDING_NAME,
-    TokenType.NUMBER_LITERAL,
-    TokenType.COLOUR_LITERAL
-]
 
 class Token:
     def __init__(self, token_type: TokenType, value):
@@ -159,6 +151,9 @@ class Tokenizer:
         return lexeme if len(lexeme) > 0 else None
     
     def trim_off_comments(self, tokens: List[Token]) -> List[Token]:
+        """ Trims off comments of the token stream and raises errors if unpaired 
+        comment tokens appear
+        """
         final_tokens = []
         inside_comment = False
 
@@ -215,12 +210,19 @@ class ParsingResultType(Enum):
     ERROR = 400
 
 class ParsingResult:
+    """ Result class that contians information about an attempted parsing
+    operation 
+    """
+    
     def __init__(self, type: ParsingResultType, 
                  msg: str, end_index: int):
         self.type = type
         self.msg = msg
         self.end_index = end_index
-    
+        
+        # to highlight the most usefull error message
+        self.depth = 0
+
     @classmethod
     def success(cls, end_index):
         return cls(ParsingResultType.SUCCESS, 'success', end_index)
@@ -235,18 +237,13 @@ class Parser:
     
     def __init__(self, tokens: List[Token]): 
     
-        self.cur_index = 0
         self.tokens = tokens
         
-        
-        self.cur_scope = 0
         # dictionary stack representing scopes to score variables 
         self.scopes: List[Dict[str, Union[float, str]]] = [{}] 
 
-    def get_cur_token(self) -> Token:
-        cur_token = self.tokens[self.cur_index]
-        self.cur_index += 1
-        return cur_token
+        # to highlight preciceley syntax errors
+        self.cur_statement = 1
     
     # turtle script actions
     def center_turtle(self):
@@ -254,12 +251,16 @@ class Parser:
         turtle.goto(0, 0)
         turtle.pendown()
 
+    # binding manipulation functions
+
     def save_variable(self, binding_name: str, value: Union[float, str]):
+        """ Saves a binding with value "value" if the binding_name is not taken in the 
+        current operation top-most scope 
+        """
         if self.scopes[len(self.scopes)-1].get(binding_name) is not None: 
             raise SemanticError.conflicting_variable_declaration(binding_name)
         self.scopes[len(self.scopes)-1][binding_name] = value    
     
-    # parser statements
 
     def fetch_variable(self, binding_name: str, expected_type: type=float) -> Union[float, str]:
         """ Returns the variable associated with binding name
@@ -275,6 +276,8 @@ class Parser:
         
         raise SemanticError.non_existent_variable(binding_name)
         
+    # module parsing functions
+    
     def parse_instruction_batch(self, index) -> ParsingResult:
         """ Recursively processes a batch of instructions until the scope is 
         closed
@@ -299,6 +302,8 @@ class Parser:
         return ParsingResult.error()
         
     def parse_scoped_statements(self, index=0) -> ParsingResult:
+        """ Parses a batch of statements contained withing a pair of keys
+        """
         if self.tokens[index].token_type != TokenType.OPEN_SCOPE:
             return ParsingResult.error()
         
@@ -352,7 +357,7 @@ class Parser:
         return ParsingResult.success(end_index)
         
     def parse_scope_statement(self, index) -> ParsingResult:
-        """ Tries to parse scope statement """
+        """ Tries to parse all the scope statements """
         
         scoped_statements_parse_result = self.parse_scoped_statements(index)
         if scoped_statements_parse_result.type == ParsingResultType.SUCCESS:
@@ -456,6 +461,8 @@ class Parser:
         return ParsingResult.success(index)
 
     def parse_line_statement(self, index=0) -> ParsingResult:
+        """ Tries to parse all the possible single lined statements 
+        """
         # single arged line statement
 
         forward_parse_result = self.parse_arg_line_statement(index, TokenType.FORWARD_MOVE, 
@@ -543,8 +550,9 @@ class Parser:
         
         statement_parsing_result = self.parse_statement(index)
         if statement_parsing_result.type == ParsingResultType.ERROR:
-            return statement_parsing_result
-        
+            raise SyntaxError(f'SYNTAX ERROR ON STATEMENT: {self.cur_statement}')
+        self.cur_statement += 1
+
         index = statement_parsing_result.end_index
 
         program_parsing_result = self.parse_program(index)
