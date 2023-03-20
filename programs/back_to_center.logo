@@ -1,0 +1,10 @@
+/*
+    Makes the turtle walk and goes back to center then
+*/
+
+dela 100 ;
+izqd 90 ;
+dela 100 ;
+izqd 90 ;
+lplum ;
+cntr ;

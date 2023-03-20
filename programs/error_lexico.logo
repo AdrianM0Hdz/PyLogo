@@ -1,0 +1,2 @@
+/* este programa detona un error de tipo lexico */
+$$lexema:_invalido%%

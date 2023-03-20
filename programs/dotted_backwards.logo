@@ -1,0 +1,10 @@
+/*
+ This program draws a dotted line backwards in the canvas
+*/
+
+rept 10 {
+    atra 10 ; 
+    lplum ;
+    atra 10 ; 
+    bplum ;
+}

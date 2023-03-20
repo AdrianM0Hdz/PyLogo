@@ -1,0 +1,14 @@
+PRUEBAS: 
+
+Run tests:
+
+python py_logo.py ./programs/back_to_center.logo
+python py_logo.py ./programs/circulo.logo
+python py_logo.py ./programs/clear.logo
+python py_logo.py ./programs/cuadrado.logo
+python py_logo.py ./programs/dotted_backwards.logo
+python py_logo.py ./programs/dotted_forward.logo
+python py_logo.py ./programs/error_lexico.logo
+python py_logo.py ./programs/error_semantico.logo
+python py_logo.py ./programs/error_sintactico.logo
+

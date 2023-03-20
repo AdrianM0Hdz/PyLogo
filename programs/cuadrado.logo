@@ -1,0 +1,8 @@
+/* este programa dibuja un cuadrado rojo en el lienzo */
+
+colp red ;
+
+rept 12 {
+    dela 100 ;
+    dere 90 ;
+}

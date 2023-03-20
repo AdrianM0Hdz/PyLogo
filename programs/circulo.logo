@@ -1,0 +1,9 @@
+/* Este programa dibuja un circulo color azul en el lienzo 
+*/ 
+
+colp blue ;
+
+rept 60 {
+    dela 3 ;
+    izqd 6 ;
+}

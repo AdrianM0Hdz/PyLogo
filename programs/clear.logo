@@ -1,0 +1,8 @@
+/* draws something and then clears it */
+
+rept 10 {
+    dela 100 ;
+    dere 50 ;
+}
+
+limp ;

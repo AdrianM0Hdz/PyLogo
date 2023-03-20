@@ -1,0 +1,5 @@
+/* eeste programa detona un error de tipo semantico */
+
+rept variable_no_definida {
+    dela 100 ;
+}

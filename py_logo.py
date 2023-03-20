@@ -228,8 +228,10 @@ class ParsingResult:
         return cls(ParsingResultType.SUCCESS, 'success', end_index)
     
     @classmethod
-    def error(cls):
-        return cls(ParsingResultType.ERROR, 'error', 0)
+    def error(cls, message, depth):
+        err =  cls(ParsingResultType.ERROR, message, 0)
+        err.depth = depth
+        return err
 
 # parser for syntax with recursive descent
 # here execution of code will take place
@@ -244,6 +246,12 @@ class Parser:
 
         # to highlight preciceley syntax errors
         self.cur_statement = 1
+    
+    # deepest of two results 
+    def deepest(self, pr1: ParsingResult, pr2: ParsingResult) -> ParsingResult:
+        if pr1.depth > pr2.depth:
+            return pr1
+        return pr2
     
     # turtle script actions
     def center_turtle(self):
@@ -285,12 +293,17 @@ class Parser:
         if self.tokens[index].token_type == TokenType.CLOSE_SCOPE:
             return ParsingResult.success(index+1)
         
+        error = ParsingResult.error('[UNCLOSED SCOPE]', 0)
+        
         line_statement_parsing_result = self.parse_line_statement(index)
         if line_statement_parsing_result.type == ParsingResultType.SUCCESS:
             index = line_statement_parsing_result.end_index
             batch_parsing_result = self.parse_instruction_batch(index)
             if batch_parsing_result.type == ParsingResultType.SUCCESS:
                 return batch_parsing_result
+            error = self.deepest(batch_parsing_result, error)            
+        else:
+            error = self.deepest(line_statement_parsing_result, error)
 
         scope_statement_parsing_result = self.parse_scope_statement(index)
         if scope_statement_parsing_result.type == ParsingResultType.SUCCESS:
@@ -298,14 +311,19 @@ class Parser:
             batch_parsing_result = self.parse_instruction_batch(index)
             if batch_parsing_result.type == ParsingResultType.SUCCESS:
                 return batch_parsing_result
+            error = self.deepest(batch_parsing_result, error)
+        else:
+            error = self.deepest(scope_statement_parsing_result, error)
         
-        return ParsingResult.error()
+        error.depth += 1
+        # deepest error
+        return error
         
     def parse_scoped_statements(self, index=0) -> ParsingResult:
         """ Parses a batch of statements contained withing a pair of keys
         """
         if self.tokens[index].token_type != TokenType.OPEN_SCOPE:
-            return ParsingResult.error()
+            return ParsingResult.error('[EXPECTED OPEN SCOPE "{"]', 0)
         
         index += 1
         
@@ -318,14 +336,16 @@ class Parser:
             self.scopes.pop()
             return batch_parsing_result
 
-        return ParsingResult(ParsingResultType.ERROR, 'error', 0)
+        batch_parsing_result.depth += 1
+
+        return batch_parsing_result
     
     def parse_loop_statement(self, index) -> ParsingResult:
         """ parses a loop and verifies that the argument given to the loop statement is 
         of correct type
         """
         if self.tokens[index].token_type != TokenType.FOR_LOOP:
-            return ParsingResult.error()
+            return ParsingResult.error(f'[EXPECTED REPT]', 0)
         index += 1
 
         loop_times = None
@@ -340,10 +360,10 @@ class Parser:
         # check type of loop times
         if type(loop_times) == str:
             raise SemanticError.invalid_arg_type(expected_type='integer number', found_type='colour')
-        elif loop_times % 1 != 0:
+        elif loop_times % 1 != 0: # type: ignore
             raise SemanticError.invalid_arg_type(expected_type='integer number', found_type='float number')
         
-        loop_times = int(loop_times)
+        loop_times = int(loop_times) # type: ignore
         index += 1
 
         end_index = index
@@ -351,6 +371,7 @@ class Parser:
         for _ in range(loop_times):
             scoped_statements_parsing_result = self.parse_scoped_statements(index)
             if scoped_statements_parsing_result.type == ParsingResultType.ERROR:
+                scoped_statements_parsing_result.depth += 1
                 return scoped_statements_parsing_result
             end_index = scoped_statements_parsing_result.end_index
 
@@ -367,7 +388,7 @@ class Parser:
         if loop_statement_parse_result.type == ParsingResultType.SUCCESS:
             return loop_statement_parse_result
         
-        return ParsingResult.error()
+        return self.deepest(scoped_statements_parse_result, loop_statement_parse_result)
 
     def parse_arg_line_statement(self, index: int, statement_token: TokenType, 
                                  arg_token: TokenType, arg_type: type, 
@@ -378,23 +399,23 @@ class Parser:
         """
 
         if self.tokens[index].token_type != statement_token:
-            return ParsingResult.error()
+            return ParsingResult.error(f'[EXPECTED TOKEN: {statement_token.value}]', 0)
         index += 1
         value: arg_type
 
         if self.tokens[index].token_type == TokenType.BINDING_NAME:
             # value = self.fetch_variable()
             binding_name = self.tokens[index].value
-            value = self.fetch_variable(binding_name)
+            value = self.fetch_variable(binding_name) # type: ignore
             if type(value) != arg_type:
                 raise SemanticError.invalid_arg_type(expected_type=arg_type, found_type=type(value))
         elif self.tokens[index].token_type == arg_token:
-            value = self.tokens[index].value
+            value = self.tokens[index].value # type: ignore
         else:
-            return ParsingResult.error() 
+            return ParsingResult.error(f'[EXPECTED BINDING NAME OR LITERAL THAT MATCHES REGEX: {arg_token.value}]', 1) 
         
         if self.tokens[index+1].token_type != TokenType.DELIMITATOR:
-            return ParsingResult.error()
+            return ParsingResult.error(f'[EXPECTED DELIMITATOR]', 2)
 
         callback(value)
 
@@ -408,11 +429,11 @@ class Parser:
         """
         
         if self.tokens[index].token_type != statement_token:
-            return ParsingResult.error() 
+            return ParsingResult.error(f'[EXPECTED TOKEN: {statement_token.value}]', 0) 
         index += 1
 
         if self.tokens[index].token_type != TokenType.DELIMITATOR:
-            return ParsingResult.error() 
+            return ParsingResult.error(f'[EXPECTED DELIMITATOR]', 1) 
         
         callback()
 
@@ -425,38 +446,38 @@ class Parser:
         """ Parses a binding definition of type binding_type and with value value
         """
         if self.tokens[index].token_type != TokenType.LET_KEYWORD:
-            return ParsingResult.error()
+            return ParsingResult.error('[EXPECTED LET KEYWORD]', 0)
         index += 1
 
         if self.tokens[index].token_type != TokenType.BINDING_NAME:
-            return ParsingResult.error() 
+            return ParsingResult.error('[EXPECTED VALID BINDING NAME]', 1) 
         
         binding_name = self.tokens[index].value
         index+=1
 
         if self.tokens[index].token_type != TokenType.COLON:
-            return ParsingResult.error()
+            return ParsingResult.error('[EXPECTED COLON]', 2)
         index += 1
 
         if self.tokens[index].token_type != binding_type_token:
-            return ParsingResult.error()
+            return ParsingResult.error('[EXPECTED BINDING TYPE]', 3)
         index += 1
 
         if self.tokens[index].token_type != TokenType.EQUAL_OPERATOR:
-            return ParsingResult.error()
+            return ParsingResult.error('[EXPECTED EQUAL OPERATOR]', 4)
         index += 1
 
         if self.tokens[index].token_type != binding_literal_token:
-            return ParsingResult.error()
+            return ParsingResult.error(f'[EXPECTED THAT MATCHES THE FOLLOWING REG EX {binding_literal_token.value} TYPE]', 5)
         value = self.tokens[index].value
         index += 1
 
         if self.tokens[index].token_type != TokenType.DELIMITATOR:
-            return ParsingResult.error()
+            return ParsingResult.error('[EXPECTD DELIMITATOR]', 6)
         index += 1
 
         # save binding 
-        self.save_variable(binding_name, value)
+        self.save_variable(binding_name, value) # type: ignore
 
         return ParsingResult.success(index)
 
@@ -464,36 +485,42 @@ class Parser:
         """ Tries to parse all the possible single lined statements 
         """
         # single arged line statement
+        error = ParsingResult.error('DUMMY ERROR', -1)
 
         forward_parse_result = self.parse_arg_line_statement(index, TokenType.FORWARD_MOVE, 
                                                              TokenType.NUMBER_LITERAL, float, 
                                                              turtle.forward)
         if forward_parse_result.type == ParsingResultType.SUCCESS:
             return forward_parse_result
+        error = self.deepest(error, forward_parse_result)
     
         backward_parse_result = self.parse_arg_line_statement(index, TokenType.BACKWARDS_MOVE, 
                                                               TokenType.NUMBER_LITERAL, float, 
                                                               turtle.backward)
         if backward_parse_result.type == ParsingResultType.SUCCESS:
             return backward_parse_result
-        
+        error = self.deepest(error, backward_parse_result)
+
         left_turn_parse_result = self.parse_arg_line_statement(index, TokenType.LEFT_TURN, 
                                                                TokenType.NUMBER_LITERAL, float, 
                                                                turtle.left)
         if left_turn_parse_result.type == ParsingResultType.SUCCESS:
             return left_turn_parse_result
+        error = self.deepest(error, left_turn_parse_result)
 
         right_turn_parse_result = self.parse_arg_line_statement(index, TokenType.RIGHT_TURN, 
                                                                 TokenType.NUMBER_LITERAL, float, 
                                                                 turtle.right)
         if right_turn_parse_result.type == ParsingResultType.SUCCESS:
             return right_turn_parse_result      
+        error = self.deepest(right_turn_parse_result, error)
         
         change_colour_parse_result = self.parse_arg_line_statement(index, TokenType.CHANGE_COLOUR,
                                                                    TokenType.COLOUR_LITERAL, str, 
                                                                    turtle.pencolor)
         if change_colour_parse_result.type == ParsingResultType.SUCCESS:
             return change_colour_parse_result
+        error = self.deepest(change_colour_parse_result, error)
 
         # non-arged line statements
 
@@ -501,34 +528,40 @@ class Parser:
                                                                 turtle.penup)
         if pen_up_parse_result.type == ParsingResultType.SUCCESS:
             return pen_up_parse_result 
+        error = self.deepest(pen_up_parse_result, error)
         
         pen_down_parse_result = self.parse_non_arg_line_statement(index, TokenType.PEN_DOWN, 
                                                                   turtle.pendown)
         if pen_down_parse_result.type == ParsingResultType.SUCCESS:
             return pen_down_parse_result
+        error = self.deepest(pen_down_parse_result, error)
         
         center_parse_result = self.parse_non_arg_line_statement(index, TokenType.CENTER,
                                                                 lambda: turtle.setposition(0, 0))
         if center_parse_result.type == ParsingResultType.SUCCESS:
             return center_parse_result 
+        error = self.deepest(center_parse_result, error)
         
         clear_parse_result = self.parse_non_arg_line_statement(index, TokenType.CLEAR, 
-                                                               self.center_turtle)
+                                                               turtle.clear)
         if clear_parse_result.type == ParsingResultType.SUCCESS:
             return clear_parse_result
+        error = self.deepest(clear_parse_result, error)
     
         # binding definitions
         number_binding_parse_result = self.parse_binding_definition(index, TokenType.NUMBER_DATA_TYPE, 
                                                                     TokenType.NUMBER_LITERAL)
         if number_binding_parse_result.type == ParsingResultType.SUCCESS:
             return number_binding_parse_result    
+        error = self.deepest(number_binding_parse_result, error)
 
         colour_binding_parse_result = self.parse_binding_definition(index, TokenType.COLOUR_DATA_TYPE, 
                                                                     TokenType.COLOUR_LITERAL)
         if colour_binding_parse_result.type == ParsingResultType.SUCCESS:
             return colour_binding_parse_result
+        error = self.deepest(colour_binding_parse_result, error)
         
-        return ParsingResult(ParsingResultType.ERROR, 'ERROR', 0)
+        return error
 
     def parse_statement(self, index=0) -> ParsingResult:
         line_statement_parsing_result = self.parse_line_statement(index)
@@ -539,7 +572,7 @@ class Parser:
         if scope_statement_parsing_result.type == ParsingResultType.SUCCESS:
             return scope_statement_parsing_result
                 
-        return ParsingResult(ParsingResultType.ERROR, 'ERROR', 0)
+        return self.deepest(line_statement_parsing_result, scope_statement_parsing_result)
 
 
     # parses with recursive descent method the 
@@ -550,7 +583,7 @@ class Parser:
         
         statement_parsing_result = self.parse_statement(index)
         if statement_parsing_result.type == ParsingResultType.ERROR:
-            raise SyntaxError(f'SYNTAX ERROR ON STATEMENT: {self.cur_statement}')
+            raise SyntaxError(f'SYNTAX ERROR ON STATEMENT: {self.cur_statement} \n MESSAGE: {statement_parsing_result.msg}')
         self.cur_statement += 1
 
         index = statement_parsing_result.end_index

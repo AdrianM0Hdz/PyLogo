@@ -1,0 +1,10 @@
+/* this program draws a dotted line forward in the canvas 
+**
+*/
+
+rept 10 {
+    lplum ; 
+    dela 10 ;
+    bplum ; 
+    dela 10 ;
+}

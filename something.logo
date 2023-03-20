@@ -1,6 +1,7 @@
 /* this program intends to draw something cool 
-** Copyright (c) 2023
-**
 **
 */
 
+let a : number = 100 ;
+
+dela a ;

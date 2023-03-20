@@ -1,0 +1,3 @@
+/* este programa detona un error de tipo sintactico */ 
+
+let var : number = ;
